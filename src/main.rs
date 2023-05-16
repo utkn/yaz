@@ -6,7 +6,7 @@ use document::{
 use editor::{editor_mode::*, editor_server::EditorServer, HistoricalEditorState, ModalEditor};
 
 use highlight_server::HighlightServer;
-use renderer_server::RendererServer;
+use render_server::RendererServer;
 
 mod cursive_frontend;
 mod cursor;
@@ -14,18 +14,18 @@ mod document;
 mod editor;
 mod events;
 mod highlight_server;
-mod renderer_server;
+mod render_server;
 
 fn main() {
     let file_name = std::env::args().nth(1).unwrap_or_default();
     // Initialize the editor state with the file.
     let mut editor_state: HistoricalEditorState = DocumentMap::default().into();
-    editor_state.modify_with_mod(
+    editor_state.modify_with_tx(
         Transaction::new()
-            .with_mod(PrimitiveMod::Editor(DocMapMod::CreateDoc(
+            .with_mod(PrimitiveMod::DocMap(DocMapMod::PopDoc(0)))
+            .with_mod(PrimitiveMod::DocMap(DocMapMod::CreateDoc(
                 Document::new_from_file(&file_name),
-            )))
-            .with_mod(PrimitiveMod::Editor(DocMapMod::SwitchDoc(1))),
+            ))),
     );
     // Construct the editor.
     let editor = ModalEditor::new(editor_state, NormalMode::id())
@@ -38,7 +38,7 @@ fn main() {
     let mut editor_server = EditorServer::new(editor);
     let mut rnd_server = RendererServer::<CursiveFrontend>::new(editor_server.new_connection());
     let mut hl_server = HighlightServer::new(editor_server.new_connection());
-    let mut cursive_ctx = rnd_server.get_backend_mut().init_cursive_context();
+    let mut cursive_ctx = rnd_server.get_frontend_mut().init_cursive_context();
     // Run in the background.
     hl_server.run();
     rnd_server.run();

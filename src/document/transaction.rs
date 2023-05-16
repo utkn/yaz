@@ -107,7 +107,7 @@ impl Transaction {
                     TransactionDep::DocumentSel(*doc_id, *sel_id)
                 }
                 PrimitiveMod::Text(doc_id, _) => TransactionDep::DocumentBuf(*doc_id),
-                PrimitiveMod::Editor(_) => TransactionDep::DocumentMap,
+                PrimitiveMod::DocMap(_) => TransactionDep::DocumentMap,
             })
             .collect::<HashSet<_>>();
         // Extend the dependencies with DocumentMap >= Document >= DocumentBuf, DocumentSel
@@ -139,5 +139,13 @@ impl Transaction {
             }
         });
         deps
+    }
+}
+
+impl FromIterator<PrimitiveMod> for Transaction {
+    fn from_iter<T: IntoIterator<Item = PrimitiveMod>>(iter: T) -> Self {
+        Self {
+            primitive_mods: iter.into_iter().collect_vec(),
+        }
     }
 }

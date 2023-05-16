@@ -1,9 +1,14 @@
 use std::sync::mpsc;
 
 use crate::{
+    cursor::SelectionIterator,
     editor::{editor_server::*, EditorStateSummary, ModalEditorError},
     events::KeyEvt,
 };
+
+pub use self::stylizer::*;
+
+mod stylizer;
 
 #[derive(Clone, Debug)]
 pub enum RendererEvent {
@@ -12,31 +17,33 @@ pub enum RendererEvent {
 
 pub struct RendererServer<T> {
     editor_conn: EditorConnection,
-    backend: T,
+    frontend: T,
     evt_chan: mpsc::Receiver<RendererEvent>,
+    stylizer: Stylizer,
 }
 
 impl<T> RendererServer<T>
 where
-    T: RendererBackend + 'static,
+    T: RendererFrontend + 'static,
 {
     pub fn new(editor_conn: EditorConnection) -> Self {
         let (snd, rcv) = mpsc::channel();
-        let backend = T::new(snd);
         RendererServer {
             editor_conn,
-            backend,
+            frontend: T::new(snd),
             evt_chan: rcv,
+            stylizer: Default::default(),
         }
     }
 
-    pub fn get_backend_mut(&mut self) -> &mut T {
-        &mut self.backend
+    pub fn get_frontend_mut(&mut self) -> &mut T {
+        &mut self.frontend
     }
 
     pub fn run(mut self) {
         std::thread::spawn(move || {
             println!("RendererServer: started");
+            let mut last_state = EditorStateSummary::default();
             loop {
                 // First, try to receive an event from the backend.
                 if let Ok(rnd_evt) = self.evt_chan.try_recv() {
@@ -50,16 +57,31 @@ where
                 if let Ok(editor_msg) = self.editor_conn.try_receive_msg() {
                     match editor_msg {
                         EditorServerMsg::StateUpdated(new_state) => {
-                            self.backend.state_updated(new_state);
+                            let buf = new_state.curr_doc.get_buf();
+                            self.stylizer.set_len_chars(buf.len_chars());
+                            self.stylizer.set_highlighted_regions(
+                                new_state
+                                    .curr_doc
+                                    .selections
+                                    .values()
+                                    .cloned()
+                                    .collect_merged(buf),
+                            );
+                            self.frontend
+                                .state_updated(&new_state, self.stylizer.compute_regions());
+                            last_state = new_state;
                         }
-                        EditorServerMsg::HighlightResetRequest(line_idx) => {}
-                        EditorServerMsg::HighlightRequest(line_idx, style, s) => {}
+                        EditorServerMsg::StylizeRequest(start, end, style) => {
+                            self.stylizer.add_styled_region((start, end), style);
+                            self.frontend
+                                .state_updated(&last_state, self.stylizer.compute_regions());
+                        }
                         EditorServerMsg::Error(err) => {
-                            self.backend.error(err);
+                            self.frontend.error(err);
                         }
                         EditorServerMsg::QuitRequested => {
                             println!("RendererServer: quitting");
-                            self.backend.quit();
+                            self.frontend.quit();
                             break;
                         }
                     }
@@ -69,9 +91,9 @@ where
     }
 }
 
-pub trait RendererBackend: Send {
+pub trait RendererFrontend: Send {
     fn new(evt_chan: mpsc::Sender<RendererEvent>) -> Self;
-    fn state_updated(&mut self, new_state: EditorStateSummary);
+    fn state_updated(&mut self, new_state: &EditorStateSummary, styles: Vec<(usize, usize, Style)>);
     fn error(&mut self, error: ModalEditorError);
     fn quit(&mut self);
 }

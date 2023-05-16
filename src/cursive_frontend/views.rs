@@ -6,7 +6,7 @@ use cursive::{
     views,
 };
 
-use crate::{events::KeyEvt, renderer_server::RendererEvent};
+use crate::{events::KeyEvt, render_server::RendererEvent};
 
 use super::CursiveFrontendUserData;
 

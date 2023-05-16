@@ -66,25 +66,24 @@ impl HistoricalEditorState {
         self.history.redo(&mut self.doc_map);
     }
 
-    /// Applies the modification outputted by the given command.
+    /// Applies the transaction outputted by the given generator.
     pub fn modify_with_tx_gen(
         &mut self,
         trigger: &KeyCombo,
         tx_gen: &TransactionGenerator,
     ) -> bool {
         tx_gen.1(trigger, &self.doc_map)
-            .map(|m| self.modify_with_mod(m))
+            .map(|m| self.modify_with_tx(m))
             .unwrap_or(false)
     }
 
-    /// Applies the given modification.
-    pub fn modify_with_mod(&mut self, tx: Transaction) -> bool {
+    /// Applies the given transaction.
+    pub fn modify_with_tx(&mut self, tx: Transaction) -> bool {
         // Discard empty transactions
         if tx.primitive_mods.is_empty() {
             return false;
         }
         // Apply the modification to the appropriate history.
-        let modification_successful = self.history.next(tx, &mut self.doc_map);
-        modification_successful
+        self.history.next(tx, &mut self.doc_map)
     }
 }

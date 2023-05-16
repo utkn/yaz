@@ -19,7 +19,7 @@ fn delete_at_side(
     side_fn: fn(usize, &Rope) -> Option<usize>,
 ) -> Option<Transaction> {
     let sels = doc_map.get_curr_doc()?.selections.iter();
-    let buf = &doc_map.get_curr_doc()?.inner_buf;
+    let buf = &doc_map.get_curr_doc()?.get_buf();
     // (idx => # deleted chars left of idx)
     let mut modification = Transaction::new();
     sels.sorted_by_key(|(_, sel)| sel.0)

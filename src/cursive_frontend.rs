@@ -1,7 +1,7 @@
 use std::sync::mpsc;
 
 use cursive::{
-    theme::{BorderStyle, Palette, Style},
+    theme::{BorderStyle, ColorStyle, ColorType, Palette, Style},
     utils::markup::StyledString,
     CbSink, CursiveRunnable, With,
 };
@@ -9,11 +9,10 @@ use cursive::{
 pub mod views;
 
 use crate::{
-    cursor::SelectionIterator,
     document::Document,
     editor::{EditorStateSummary, ModalEditorError},
     events::{Key, KeyEvt, KeyMods},
-    renderer_server::{RendererBackend, RendererEvent},
+    render_server::{RendererEvent, RendererFrontend},
 };
 
 use self::views::{RootView, ViewBuilder};
@@ -51,6 +50,26 @@ impl From<cursive::event::Key> for Key {
             cursive::event::Key::F11 => Key::F11,
             cursive::event::Key::F12 => Key::F12,
         }
+    }
+}
+
+impl From<crate::render_server::Color> for cursive::theme::Color {
+    fn from(value: crate::render_server::Color) -> Self {
+        Self::Rgb(value.0, value.1, value.2)
+    }
+}
+
+impl From<crate::render_server::Style> for cursive::theme::Style {
+    fn from(value: crate::render_server::Style) -> Self {
+        if value.highlight {
+            ColorStyle::new(
+                ColorType::Color(value.fg.into()),
+                ColorType::Color(value.bg.into()),
+            )
+        } else {
+            ColorStyle::new(ColorType::Color(value.fg.into()), ColorType::InheritParent)
+        }
+        .into()
     }
 }
 
@@ -137,7 +156,7 @@ impl CursiveFrontend {
     }
 }
 
-impl RendererBackend for CursiveFrontend {
+impl RendererFrontend for CursiveFrontend {
     fn new(evt_chan: mpsc::Sender<RendererEvent>) -> Self {
         CursiveFrontend {
             cb_sink: Option::None,
@@ -145,17 +164,26 @@ impl RendererBackend for CursiveFrontend {
         }
     }
 
-    fn state_updated(&mut self, new_state: EditorStateSummary) {
+    fn state_updated(
+        &mut self,
+        new_state: &EditorStateSummary,
+        styles: Vec<(usize, usize, crate::render_server::Style)>,
+    ) {
+        let new_state = new_state.clone();
         self.send_cursive_callback(move |ctx| {
             // Stylize the current text.
-            let stylized_str = stylize(&new_state.curr_doc);
+            let stylized_str = create_styled_string(
+                &new_state.curr_doc,
+                styles
+                    .clone()
+                    .into_iter()
+                    .map(|(start, end, style)| (start, end, style.into()))
+                    .collect(),
+            );
             views::EditorTextView::get(ctx).set_content(stylized_str);
             views::CmdBarView::get(ctx)
                 .set_content(new_state.display.btm_bar_text.clone().unwrap_or_default());
-            views::LogView::get(ctx).set_content(format!(
-                "{} ({:?})",
-                new_state.curr_mode, new_state.curr_combo
-            ));
+            views::LogView::get(ctx).set_content(format!("{}", new_state.curr_mode));
             new_state
                 .display
                 .mid_box_text
@@ -178,54 +206,18 @@ fn stylize_whitespaces(s: String) -> String {
     s.replace("\t", "····").replace("\n", "↩\n")
 }
 
-fn stylize(doc: &Document) -> StyledString {
-    let merged_highlights = doc
-        .selections
-        .values()
-        .cloned()
-        .collect_merged(&doc.inner_buf);
-    // let selection_heads = buf
-    //     .selections
-    //     .values()
-    //     .map(|sel| sel.0)
-    //     .collect::<HashSet<usize>>();
+fn create_styled_string(doc: &Document, styles: Vec<(usize, usize, Style)>) -> StyledString {
     let mut styled_content = StyledString::new();
-    let mut last_point = 0;
-    merged_highlights.iter().for_each(|(start, end)| {
-        if last_point != *start {
-            styled_content.append_plain(stylize_whitespaces(
-                doc.inner_buf
-                    .get_slice(last_point..*start)
-                    .map(|s| s.to_string())
-                    .unwrap_or(String::new()),
-            ))
-        }
+    for (start, end, style) in styles {
         styled_content.append_styled(
             stylize_whitespaces(
-                doc.inner_buf
-                    .get_slice(*start..*end)
+                doc.get_buf()
+                    .get_slice(start..end)
                     .map(|s| s.to_string())
                     .unwrap_or(String::new()),
             ),
-            Style::highlight(),
+            style,
         );
-        last_point = *end;
-    });
-    if last_point < doc.inner_buf.len_chars() {
-        styled_content.append_plain(stylize_whitespaces(
-            doc.inner_buf
-                .get_slice(last_point..doc.inner_buf.len_chars())
-                .map(|s| s.to_string())
-                .unwrap_or(String::new()),
-        ))
-    }
-    // handle highlighted EOF
-    if merged_highlights
-        .last()
-        .map(|hl| hl.1 == doc.inner_buf.len_chars() && hl.0 == hl.1)
-        .unwrap_or(false)
-    {
-        styled_content.append_styled(" ", Style::highlight());
     }
     styled_content
 }

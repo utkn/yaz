@@ -108,7 +108,7 @@ impl DocMapMod {
 pub enum PrimitiveMod {
     Sel(usize, usize, SelectionMod),
     Text(usize, BufMod),
-    Editor(DocMapMod),
+    DocMap(DocMapMod),
 }
 
 impl PrimitiveMod {
@@ -123,9 +123,9 @@ impl PrimitiveMod {
                 .get_mut(doc_id)
                 .and_then(|doc| text_mod.apply(&mut doc.inner_buf))
                 .map(|text_mod| PrimitiveMod::Text(*doc_id, text_mod)),
-            PrimitiveMod::Editor(editor_mod) => editor_mod
+            PrimitiveMod::DocMap(editor_mod) => editor_mod
                 .apply(doc_map)
-                .map(|editor_mod| PrimitiveMod::Editor(editor_mod)),
+                .map(|editor_mod| PrimitiveMod::DocMap(editor_mod)),
         }
     }
 }

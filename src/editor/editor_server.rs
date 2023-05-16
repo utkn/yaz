@@ -3,12 +3,12 @@ use std::sync::mpsc;
 use crate::editor::{EditorStateSummary, ModalEditor, ModalEditorError, ModalEditorResult};
 
 use crate::events::KeyEvt;
+use crate::render_server::Style;
 
 #[derive(Clone, Debug)]
 pub enum EditorServerReq {
     UIEvent(KeyEvt),
-    HighlightEvent(usize, syntect::highlighting::Style, String),
-    HighlightResetEvent(usize),
+    StylizeEvent(usize, usize, Style),
 }
 
 #[derive(Clone, Debug)]
@@ -16,8 +16,7 @@ pub enum EditorServerMsg {
     StateUpdated(EditorStateSummary),
     QuitRequested,
     Error(ModalEditorError),
-    HighlightRequest(usize, syntect::highlighting::Style, String),
-    HighlightResetRequest(usize),
+    StylizeRequest(usize, usize, Style),
 }
 
 pub struct EditorConnection(
@@ -94,12 +93,8 @@ impl EditorServer {
                                 }
                             }
                         }
-                        EditorServerReq::HighlightResetEvent(line_idx) => {
-                            self.broadcast(EditorServerMsg::HighlightResetRequest(line_idx));
-                            
-                        }
-                        EditorServerReq::HighlightEvent(line_idx, style, s) => {
-                            self.broadcast(EditorServerMsg::HighlightRequest(line_idx, style, s));
+                        EditorServerReq::StylizeEvent(start, end, style) => {
+                            self.broadcast(EditorServerMsg::StylizeRequest(start, end, style));
                         }
                     };
                 }

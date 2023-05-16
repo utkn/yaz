@@ -25,8 +25,8 @@ impl std::fmt::Display for DocumentSource {
 pub struct Document {
     pub source: DocumentSource,
     pub selections: HashMap<usize, TextSelection>,
-    pub inner_buf: Rope,
     pub dirty: bool,
+    inner_buf: Rope,
 }
 
 impl Document {
@@ -50,6 +50,15 @@ impl Document {
         } else {
             Self::new_empty()
         }
+    }
+
+    pub fn get_buf(&self) -> &Rope {
+        &self.inner_buf
+    }
+
+    pub fn get_buf_mut(&mut self) -> &mut Rope {
+        self.dirty = true;
+        &mut self.inner_buf
     }
 
     pub fn save(&mut self) -> Result<(), std::io::Error> {

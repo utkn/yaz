@@ -17,7 +17,7 @@ fn move_all_heads(
     movement_fn: impl Fn(usize, &Rope) -> Option<usize>,
     doc_map: &DocumentMap,
 ) -> Option<Transaction> {
-    let buf = &doc_map.get_curr_doc()?.inner_buf;
+    let buf = &doc_map.get_curr_doc()?.get_buf();
     Some(
         Transaction::new().with_mods(doc_map.get_curr_doc()?.selections.iter().map(
             |(sel_id, sel)| {
@@ -114,7 +114,7 @@ pub fn move_head_left_occurrence(tr: &KeyCombo, doc_map: &DocumentMap) -> Option
 
 #[tx_generator]
 fn select_this_or_next_line(_: &KeyCombo, doc_map: &DocumentMap) -> Option<Transaction> {
-    let buf = &doc_map.get_curr_doc()?.inner_buf;
+    let buf = &doc_map.get_curr_doc()?.get_buf();
     Some(
         Transaction::new().with_mods(
             doc_map
@@ -168,7 +168,7 @@ fn delete_sels(_: &KeyCombo, doc_map: &DocumentMap) -> Option<Transaction> {
         .selections
         .values()
         .cloned()
-        .collect_merged(&doc_map.get_curr_doc()?.inner_buf);
+        .collect_merged(&doc_map.get_curr_doc()?.get_buf());
     // Delete the selections while maintaining the selection positions.
     let mut modification = Transaction::new();
     merged_sels.iter().for_each(|(start, end)| {
@@ -241,7 +241,7 @@ fn add_sel_down(_: &KeyCombo, doc_map: &DocumentMap) -> Option<Transaction> {
         .max_by_key(|(sel_id, _)| *sel_id)
         .map(|(_, sel)| sel.0)
         .unwrap_or(0);
-    let new_sel_head = lower_grapheme_or_end(max_sel_head, &doc_map.get_curr_doc()?.inner_buf)?;
+    let new_sel_head = lower_grapheme_or_end(max_sel_head, &doc_map.get_curr_doc()?.get_buf())?;
     let new_sel_id = doc_map
         .get_curr_doc()?
         .selections
@@ -249,7 +249,7 @@ fn add_sel_down(_: &KeyCombo, doc_map: &DocumentMap) -> Option<Transaction> {
         .max()
         .map(|max| max + 1)
         .unwrap_or(0);
-    let p_mod = PrimitiveMod::Editor(DocMapMod::CreateSel(
+    let p_mod = PrimitiveMod::DocMap(DocMapMod::CreateSel(
         doc_map.curr_doc_id(),
         new_sel_id,
         TextSelection(new_sel_head, None),
@@ -284,7 +284,7 @@ fn reset_sels(_: &KeyCombo, doc_map: &DocumentMap) -> Option<Transaction> {
         .iter()
         .filter(|(sel_id, _)| *sel_id != min_sel_id)
         .map(|(sel_id, _)| {
-            PrimitiveMod::Editor(DocMapMod::DeleteSel(doc_map.curr_doc_id(), *sel_id))
+            PrimitiveMod::DocMap(DocMapMod::DeleteSel(doc_map.curr_doc_id(), *sel_id))
         })
         .collect_vec();
     Some(Transaction::new().with_mods(mods))
