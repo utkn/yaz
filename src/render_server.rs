@@ -43,7 +43,6 @@ where
     pub fn run(mut self) {
         std::thread::spawn(move || {
             println!("RendererServer: started");
-            let mut last_state = EditorStateSummary::default();
             loop {
                 // First, try to receive an event from the backend.
                 if let Ok(rnd_evt) = self.evt_chan.try_recv() {
@@ -69,12 +68,9 @@ where
                             );
                             self.frontend
                                 .state_updated(&new_state, self.stylizer.compute_regions());
-                            last_state = new_state;
                         }
                         EditorServerMsg::StylizeRequest(start, end, style) => {
                             self.stylizer.add_styled_region((start, end), style);
-                            self.frontend
-                                .state_updated(&last_state, self.stylizer.compute_regions());
                         }
                         EditorServerMsg::Error(err) => {
                             self.frontend.error(err);

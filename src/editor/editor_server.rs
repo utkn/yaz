@@ -95,6 +95,18 @@ impl EditorServer {
                         }
                         EditorServerReq::StylizeEvent(start, end, style) => {
                             self.broadcast(EditorServerMsg::StylizeRequest(start, end, style));
+                            if self
+                                .modal_state
+                                .historical_state
+                                .doc_map
+                                .get_curr_doc()
+                                .map(|doc| doc.get_buf().len_chars() == end)
+                                .unwrap_or(false)
+                            {
+                                self.broadcast(EditorServerMsg::StateUpdated(
+                                    self.modal_state.summary(),
+                                ));
+                            }
                         }
                     };
                 }

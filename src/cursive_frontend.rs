@@ -172,14 +172,7 @@ impl RendererFrontend for CursiveFrontend {
         let new_state = new_state.clone();
         self.send_cursive_callback(move |ctx| {
             // Stylize the current text.
-            let stylized_str = create_styled_string(
-                &new_state.curr_doc,
-                styles
-                    .clone()
-                    .into_iter()
-                    .map(|(start, end, style)| (start, end, style.into()))
-                    .collect(),
-            );
+            let stylized_str = create_styled_string(&new_state.curr_doc, styles);
             views::EditorTextView::get(ctx).set_content(stylized_str);
             views::CmdBarView::get(ctx)
                 .set_content(new_state.display.btm_bar_text.clone().unwrap_or_default());
@@ -202,11 +195,14 @@ impl RendererFrontend for CursiveFrontend {
     }
 }
 
-fn stylize_whitespaces(s: String) -> String {
-    s.replace("\t", "····").replace("\n", "↩\n")
-}
+fn create_styled_string(
+    doc: &Document,
+    styles: Vec<(usize, usize, crate::render_server::Style)>,
+) -> StyledString {
+    fn stylize_whitespaces(s: String) -> String {
+        s.replace("\t", "····").replace("\n", "↩\n")
+    }
 
-fn create_styled_string(doc: &Document, styles: Vec<(usize, usize, Style)>) -> StyledString {
     let mut styled_content = StyledString::new();
     for (start, end, style) in styles {
         styled_content.append_styled(
@@ -216,7 +212,7 @@ fn create_styled_string(doc: &Document, styles: Vec<(usize, usize, Style)>) -> S
                     .map(|s| s.to_string())
                     .unwrap_or(String::new()),
             ),
-            style,
+            Style::from(style),
         );
     }
     styled_content
