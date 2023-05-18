@@ -13,6 +13,7 @@ mod stylizer;
 #[derive(Clone, Debug)]
 pub enum RendererEvent {
     KeyEvent(KeyEvt),
+    Resized(usize, usize),
 }
 
 pub struct RendererServer<T> {
@@ -40,6 +41,24 @@ where
         &mut self.frontend
     }
 
+    fn redraw(&mut self, state: EditorStateSummary) {
+        let buf = state.curr_doc.get_buf();
+        let mut tmp_stylizer = self.stylizer.clone();
+        state
+            .curr_doc
+            .selections
+            .values()
+            .cloned()
+            .collect_merged(buf)
+            .into_iter()
+            .for_each(|(start, end)| {
+                tmp_stylizer.layer_region_style(start, end, [StyleAttr::Highlight]);
+            });
+        let max_chars = state.view.approx_displayed_len_chars(buf);
+        let regions = tmp_stylizer.compute_regions(max_chars);
+        self.frontend.state_updated(&state, regions);
+    }
+
     pub fn run(mut self) {
         std::thread::spawn(move || {
             println!("RendererServer: started");
@@ -50,35 +69,42 @@ where
                         RendererEvent::KeyEvent(evt) => {
                             self.editor_conn.send_req(EditorServerReq::UIEvent(evt))
                         }
+                        RendererEvent::Resized(new_width, new_height) => {
+                            self.editor_conn
+                                .send_req(EditorServerReq::UpdateViewEvent(new_width, new_height));
+                        }
                     }
                 }
                 // Then, try to receive a message from the editor server.
                 if let Ok(editor_msg) = self.editor_conn.try_receive_msg() {
                     match editor_msg {
-                        EditorServerMsg::StateUpdated(new_state) => {
-                            let buf = new_state.curr_doc.get_buf();
-                            self.stylizer.set_len_chars(buf.len_chars());
-                            self.stylizer.set_highlighted_regions(
-                                new_state
-                                    .curr_doc
-                                    .selections
-                                    .values()
-                                    .cloned()
-                                    .collect_merged(buf),
-                            );
-                            self.frontend
-                                .state_updated(&new_state, self.stylizer.compute_regions());
-                        }
-                        EditorServerMsg::StylizeRequest(start, end, style) => {
-                            self.stylizer.add_styled_region((start, end), style);
-                        }
-                        EditorServerMsg::Error(err) => {
+                        EditorServerMsg::ErrorThrown(err) => {
                             self.frontend.error(err);
                         }
                         EditorServerMsg::QuitRequested => {
                             println!("RendererServer: quitting");
                             self.frontend.quit();
                             break;
+                        }
+                        EditorServerMsg::ViewUpdated(_new_height, state) => {
+                            self.redraw(state);
+                        }
+                        EditorServerMsg::EditorResult(res, state) => {
+                            self.redraw(state);
+                        }
+                        EditorServerMsg::StylizeInit(state) => {
+                            self.stylizer.reset();
+                            self.stylizer.layer_region_style(
+                                0,
+                                state.curr_doc.get_buf().len_chars(),
+                                ConcreteStyle::default(),
+                            );
+                        }
+                        EditorServerMsg::Stylize(start, end, style, _state) => {
+                            self.stylizer.layer_region_style(start, end, style);
+                        }
+                        EditorServerMsg::StylizeEnd(state) => {
+                            self.redraw(state);
                         }
                     }
                 }
@@ -89,7 +115,11 @@ where
 
 pub trait RendererFrontend: Send {
     fn new(evt_chan: mpsc::Sender<RendererEvent>) -> Self;
-    fn state_updated(&mut self, new_state: &EditorStateSummary, styles: Vec<(usize, usize, Style)>);
+    fn state_updated(
+        &mut self,
+        new_state: &EditorStateSummary,
+        styles: Vec<(usize, usize, ConcreteStyle)>,
+    );
     fn error(&mut self, error: ModalEditorError);
     fn quit(&mut self);
 }

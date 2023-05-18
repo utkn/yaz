@@ -1,6 +1,8 @@
+use crate::cursor::GraphemeIterable;
 use crate::cursor::TextSelection;
 use ropey::Rope;
 use std::collections::HashMap;
+use unicode_width::UnicodeWidthStr;
 
 pub mod primitive_mods;
 mod transaction;
@@ -18,6 +20,61 @@ impl std::fmt::Display for DocumentSource {
         } else {
             f.write_str("[scratch]")
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DocumentView {
+    pub x_offset: usize,
+    pub y_offset: usize,
+    pub max_height: usize,
+    pub max_width: usize,
+}
+
+impl DocumentView {
+    /// Returns the approximate number of chars displayed in the view.
+    /// Can be used for optimization.
+    pub fn approx_displayed_len_chars(&self, buf: &Rope) -> usize {
+        buf.lines()
+            .skip(self.y_offset)
+            .take(self.max_height)
+            .map(|line| {
+                line.chunks()
+                    .map(|s| (s.chars().count(), s.width()))
+                    .scan(0, |curr_width_sum, (char_count, w)| {
+                        *curr_width_sum += w;
+                        Some((char_count, *curr_width_sum))
+                    })
+                    .skip_while(|(_, w_sum)| *w_sum < self.x_offset)
+                    .take_while(|(_, w_sum)| *w_sum < self.max_width)
+                    .map(|(char_count, _)| char_count)
+                    .sum::<usize>()
+            })
+            .sum()
+    }
+
+    pub fn map_to_visual_position(char_idx: usize, buf: &Rope) -> (usize, usize) {
+        let y_offset = buf.try_char_to_line(char_idx).unwrap_or(0);
+        let line_start = buf.try_line_to_char(y_offset).unwrap_or(0);
+        let char_offset_at_line = char_idx - line_start;
+        let x_offset = buf
+            .graphemes(line_start)
+            .map(|g| (g.chars().count(), g.width()))
+            .scan((0, 0), |curr_sum, (char_count, width)| {
+                curr_sum.0 += char_count;
+                curr_sum.1 += width;
+                Some(*curr_sum)
+            })
+            .take_while(|(c_sum, _)| *c_sum < char_offset_at_line)
+            .map(|(_, w_sum)| w_sum)
+            .last()
+            .unwrap_or(0);
+        (x_offset, y_offset)
+    }
+
+    pub fn y_offset(char_idx: usize, buf: &Rope) -> usize {
+        let y_offset = buf.try_char_to_line(char_idx).unwrap_or(0);
+        y_offset
     }
 }
 
@@ -101,11 +158,15 @@ impl From<DocumentSource> for Document {
 
 /// Represents a collection of documents.
 #[derive(Clone, Debug)]
-pub struct DocumentMap(usize, HashMap<usize, Document>);
+pub struct DocumentMap(usize, HashMap<usize, Document>, DocumentView);
 
 impl Default for DocumentMap {
     fn default() -> Self {
-        Self(0, HashMap::from([(0, Document::new_empty())]))
+        Self(
+            0,
+            HashMap::from([(0, Document::new_empty())]),
+            Default::default(),
+        )
     }
 }
 
@@ -150,5 +211,13 @@ impl DocumentMap {
 
     pub fn get_curr_doc_mut(&mut self) -> Option<&mut Document> {
         self.get_mut(&self.curr_doc_id())
+    }
+
+    pub fn get_view(&self) -> &DocumentView {
+        &self.2
+    }
+
+    pub fn get_view_mut(&mut self) -> &mut DocumentView {
+        &mut self.2
     }
 }

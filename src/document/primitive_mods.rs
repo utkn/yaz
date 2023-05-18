@@ -121,7 +121,7 @@ impl PrimitiveMod {
                 .map(|sel_mod| PrimitiveMod::Sel(*doc_id, *sel_id, sel_mod)),
             PrimitiveMod::Text(doc_id, text_mod) => doc_map
                 .get_mut(doc_id)
-                .and_then(|doc| text_mod.apply(&mut doc.inner_buf))
+                .and_then(|doc| text_mod.apply(doc.get_buf_mut()))
                 .map(|text_mod| PrimitiveMod::Text(*doc_id, text_mod)),
             PrimitiveMod::DocMap(editor_mod) => editor_mod
                 .apply(doc_map)

@@ -2,7 +2,7 @@ use syntect::{easy::HighlightLines, highlighting::ThemeSet, parsing::SyntaxSet};
 
 use crate::{
     editor::editor_server::*,
-    render_server::{Color, Style},
+    render_server::{ConcreteStyle, RGBAColor},
 };
 
 pub struct HighlightServer {
@@ -11,17 +11,17 @@ pub struct HighlightServer {
     theme_set: ThemeSet,
 }
 
-impl From<syntect::highlighting::Color> for Color {
+impl From<syntect::highlighting::Color> for RGBAColor {
     fn from(value: syntect::highlighting::Color) -> Self {
         Self(value.r, value.g, value.b, value.a)
     }
 }
 
-impl From<syntect::highlighting::Style> for Style {
+impl From<syntect::highlighting::Style> for ConcreteStyle {
     fn from(value: syntect::highlighting::Style) -> Self {
         Self {
-            fg: value.foreground.into(),
-            bg: value.background.into(),
+            fg: Some(value.foreground.into()),
+            bg: Some(value.background.into()),
             highlight: false,
         }
     }
@@ -45,7 +45,8 @@ impl HighlightServer {
                 // Then, try to receive a message from the editor server.
                 if let Ok(editor_msg) = self.editor_conn.try_receive_msg() {
                     match editor_msg {
-                        EditorServerMsg::StateUpdated(new_state) => {
+                        EditorServerMsg::ViewUpdated(view, new_state) => {
+                            self.editor_conn.send_req(EditorServerReq::StylizeInitEvent);
                             // get the extension
                             let syntax = new_state
                                 .curr_doc
@@ -59,7 +60,12 @@ impl HighlightServer {
                                 &syntax.unwrap(),
                                 &self.theme_set.themes["base16-ocean.dark"],
                             );
-                            for (line_idx, line) in new_state.curr_doc.get_buf().lines().enumerate()
+                            for (line_idx, line) in new_state
+                                .curr_doc
+                                .get_buf()
+                                .lines()
+                                .take(view.y_offset + view.max_height)
+                                .enumerate()
                             {
                                 let mut curr_char_idx = new_state
                                     .curr_doc
@@ -78,6 +84,7 @@ impl HighlightServer {
                                     curr_char_idx += s.chars().count();
                                 }
                             }
+                            self.editor_conn.send_req(EditorServerReq::StylizeEndEvent);
                         }
                         EditorServerMsg::QuitRequested => {
                             println!("HighlightServer: quitting");

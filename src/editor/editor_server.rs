@@ -1,22 +1,29 @@
 use std::sync::mpsc;
 
+use crate::document::DocumentView;
 use crate::editor::{EditorStateSummary, ModalEditor, ModalEditorError, ModalEditorResult};
 
 use crate::events::KeyEvt;
-use crate::render_server::Style;
+use crate::render_server::ConcreteStyle;
 
 #[derive(Clone, Debug)]
 pub enum EditorServerReq {
     UIEvent(KeyEvt),
-    StylizeEvent(usize, usize, Style),
+    StylizeInitEvent,
+    StylizeEvent(usize, usize, ConcreteStyle),
+    StylizeEndEvent,
+    UpdateViewEvent(usize, usize),
 }
 
 #[derive(Clone, Debug)]
 pub enum EditorServerMsg {
-    StateUpdated(EditorStateSummary),
     QuitRequested,
-    Error(ModalEditorError),
-    StylizeRequest(usize, usize, Style),
+    ErrorThrown(ModalEditorError),
+    EditorResult(ModalEditorResult, EditorStateSummary),
+    StylizeInit(EditorStateSummary),
+    Stylize(usize, usize, ConcreteStyle, EditorStateSummary),
+    StylizeEnd(EditorStateSummary),
+    ViewUpdated(DocumentView, EditorStateSummary),
 }
 
 pub struct EditorConnection(
@@ -68,46 +75,77 @@ impl EditorServer {
         }
     }
 
+    fn handle_editor_results(
+        &mut self,
+        results: impl IntoIterator<Item = ModalEditorResult>,
+    ) -> bool {
+        let summary = self.modal_state.summarize();
+        for result in results {
+            match result {
+                ModalEditorResult::QuitRequested => {
+                    self.broadcast(EditorServerMsg::QuitRequested);
+                    println!("EditorServer: quitting");
+                    return false;
+                }
+                ModalEditorResult::ErrorThrown(err) => {
+                    self.broadcast(EditorServerMsg::ErrorThrown(ModalEditorError::ModeError(
+                        err,
+                    )));
+                }
+                _ => {
+                    self.broadcast(EditorServerMsg::EditorResult(result, summary.clone()));
+                }
+            }
+        }
+        return true;
+    }
+
     pub fn run(mut self) -> std::thread::JoinHandle<()> {
         std::thread::spawn(move || {
             println!("EditorServer: started");
-            self.broadcast(EditorServerMsg::StateUpdated(self.modal_state.summary()));
             loop {
                 if let Ok(req) = self.incoming_channel_rcv.recv() {
                     match req {
                         EditorServerReq::UIEvent(evt) => {
                             self.modal_state.receive_key(evt);
                             match self.modal_state.update() {
-                                Ok(ModalEditorResult::QuitRequested) => {
-                                    self.broadcast(EditorServerMsg::QuitRequested);
-                                    println!("EditorServer: quitting");
-                                    break;
-                                }
-                                Ok(ModalEditorResult::StateUpdated) => {
-                                    self.broadcast(EditorServerMsg::StateUpdated(
-                                        self.modal_state.summary(),
-                                    ));
+                                Ok(results) => {
+                                    let should_continue = self.handle_editor_results(results);
+                                    if !should_continue {
+                                        break;
+                                    }
                                 }
                                 Err(err) => {
-                                    self.broadcast(EditorServerMsg::Error(err));
+                                    self.broadcast(EditorServerMsg::ErrorThrown(err));
                                 }
                             }
+                            self.modal_state.update_view();
+                        }
+                        EditorServerReq::UpdateViewEvent(new_width, new_height)
+                            if new_height != self.modal_state.get_view().max_height
+                                || new_width != self.modal_state.get_view().max_width =>
+                        {
+                            self.modal_state.get_view_mut().max_height = new_height;
+                            self.modal_state.get_view_mut().max_width = new_width;
+                            let summary = self.modal_state.summarize();
+                            self.broadcast(EditorServerMsg::ViewUpdated(
+                                *self.modal_state.get_view(),
+                                summary,
+                            ));
+                        }
+                        EditorServerReq::StylizeInitEvent => {
+                            let summary = self.modal_state.summarize();
+                            self.broadcast(EditorServerMsg::StylizeInit(summary));
                         }
                         EditorServerReq::StylizeEvent(start, end, style) => {
-                            self.broadcast(EditorServerMsg::StylizeRequest(start, end, style));
-                            if self
-                                .modal_state
-                                .historical_state
-                                .doc_map
-                                .get_curr_doc()
-                                .map(|doc| doc.get_buf().len_chars() == end)
-                                .unwrap_or(false)
-                            {
-                                self.broadcast(EditorServerMsg::StateUpdated(
-                                    self.modal_state.summary(),
-                                ));
-                            }
+                            let summary = self.modal_state.summarize();
+                            self.broadcast(EditorServerMsg::Stylize(start, end, style, summary));
                         }
+                        EditorServerReq::StylizeEndEvent => {
+                            let summary = self.modal_state.summarize();
+                            self.broadcast(EditorServerMsg::StylizeEnd(summary));
+                        }
+                        _ => {}
                     };
                 }
             }

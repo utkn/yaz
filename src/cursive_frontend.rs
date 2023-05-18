@@ -9,7 +9,7 @@ use cursive::{
 pub mod views;
 
 use crate::{
-    document::Document,
+    document::{Document, DocumentView},
     editor::{EditorStateSummary, ModalEditorError},
     events::{Key, KeyEvt, KeyMods},
     render_server::{RendererEvent, RendererFrontend},
@@ -53,23 +53,25 @@ impl From<cursive::event::Key> for Key {
     }
 }
 
-impl From<crate::render_server::Color> for cursive::theme::Color {
-    fn from(value: crate::render_server::Color) -> Self {
+impl From<crate::render_server::RGBAColor> for cursive::theme::Color {
+    fn from(value: crate::render_server::RGBAColor) -> Self {
         Self::Rgb(value.0, value.1, value.2)
     }
 }
 
-impl From<crate::render_server::Style> for cursive::theme::Style {
-    fn from(value: crate::render_server::Style) -> Self {
+impl From<crate::render_server::ConcreteStyle> for cursive::theme::Style {
+    fn from(value: crate::render_server::ConcreteStyle) -> Self {
         if value.highlight {
-            ColorStyle::new(
-                ColorType::Color(value.fg.into()),
-                ColorType::Color(value.bg.into()),
-            )
-        } else {
-            ColorStyle::new(ColorType::Color(value.fg.into()), ColorType::InheritParent)
+            return Style::highlight();
         }
-        .into()
+        let mut style = Style::terminal_default();
+        if let Some(color) = value.fg {
+            style.color.front = ColorType::Color(color.into());
+        }
+        // if let Some(color) = value.bg {
+        //     style.color.back = ColorType::Color(color.into());
+        // }
+        style
     }
 }
 
@@ -102,10 +104,6 @@ pub struct CursiveFrontend {
     evt_chan: mpsc::Sender<RendererEvent>,
 }
 
-pub struct CursiveFrontendUserData {
-    evt_chan: mpsc::Sender<RendererEvent>,
-}
-
 impl CursiveFrontend {
     pub fn init_cursive_context(&mut self) -> CursiveRunnable {
         let mut ctx = cursive::default();
@@ -135,10 +133,7 @@ impl CursiveFrontend {
             }),
         });
         let cb_sink = ctx.cb_sink().clone();
-        ctx.add_fullscreen_layer(RootView::new());
-        ctx.set_user_data(CursiveFrontendUserData {
-            evt_chan: self.evt_chan.clone(),
-        });
+        ctx.add_fullscreen_layer(RootView::new(self.evt_chan.clone()));
         self.cb_sink = Some(cb_sink);
         ctx
     }
@@ -167,20 +162,22 @@ impl RendererFrontend for CursiveFrontend {
     fn state_updated(
         &mut self,
         new_state: &EditorStateSummary,
-        styles: Vec<(usize, usize, crate::render_server::Style)>,
+        styles: Vec<(usize, usize, crate::render_server::ConcreteStyle)>,
     ) {
         let new_state = new_state.clone();
         self.send_cursive_callback(move |ctx| {
             // Stylize the current text.
-            let stylized_str = create_styled_string(&new_state.curr_doc, styles);
-            views::EditorTextView::get(ctx).set_content(stylized_str);
+            let stylized_str = create_styled_string(&new_state.curr_doc, &new_state.view, styles);
+            views::EditorTextView::get(ctx)
+                .get_inner_mut()
+                .set_content(stylized_str);
             views::CmdBarView::get(ctx)
                 .set_content(new_state.display.btm_bar_text.clone().unwrap_or_default());
-            views::LogView::get(ctx).set_content(format!("{}", new_state.curr_mode));
-            new_state
-                .display
-                .mid_box_text
-                .map(|txt| views::LogView::get(ctx).set_content(txt));
+            // views::LogView::get(ctx).set_content(format!("{}", new_state.curr_mode));
+            // new_state
+            //     .display
+            //     .mid_box_text
+            //     .map(|txt| views::LogView::get(ctx).set_content(txt));
         });
     }
 
@@ -197,14 +194,18 @@ impl RendererFrontend for CursiveFrontend {
 
 fn create_styled_string(
     doc: &Document,
-    styles: Vec<(usize, usize, crate::render_server::Style)>,
+    view: &DocumentView,
+    styles: Vec<(usize, usize, crate::render_server::ConcreteStyle)>,
 ) -> StyledString {
     fn stylize_whitespaces(s: String) -> String {
         s.replace("\t", "····").replace("\n", "↩\n")
     }
-
     let mut styled_content = StyledString::new();
     for (start, end, style) in styles {
+        let y = DocumentView::y_offset(start, doc.get_buf());
+        if y < view.y_offset {
+            continue;
+        }
         styled_content.append_styled(
             stylize_whitespaces(
                 doc.get_buf()

@@ -94,11 +94,9 @@ impl EditorMode for CommandMode {
             let args = args.collect_vec();
             return if let Some(cmd_gen) = self.cmd_generators.get(&target_cmd) {
                 let mut generated_action = cmd_gen.1(&args, state).unwrap_or(
-                    [EditorCmd::ThrowErr(ModalEditorError(
-                        "couldn't apply action".to_string(),
-                    ))]
-                    .into_iter()
-                    .collect(),
+                    [EditorCmd::ThrowErr("couldn't apply action".to_string())]
+                        .into_iter()
+                        .collect(),
                 );
                 generated_action.prepend(EditorCmd::ResetCombo);
                 generated_action.prepend(EditorCmd::PopMode);
@@ -106,10 +104,7 @@ impl EditorMode for CommandMode {
             } else {
                 [
                     EditorCmd::PopMode,
-                    EditorCmd::ThrowErr(ModalEditorError(format!(
-                        "invalid command `{}`",
-                        target_cmd
-                    ))),
+                    EditorCmd::ThrowErr(format!("invalid command `{}`", target_cmd)),
                 ]
                 .into_iter()
                 .collect()

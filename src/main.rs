@@ -21,7 +21,7 @@ fn main() {
     // Initialize the editor state with the file.
     let mut editor_state: HistoricalEditorState = DocumentMap::default().into();
     editor_state.modify_with_tx(
-        Transaction::new()
+        &Transaction::new()
             .with_mod(PrimitiveMod::DocMap(DocMapMod::PopDoc(0)))
             .with_mod(PrimitiveMod::DocMap(DocMapMod::CreateDoc(
                 Document::new_from_file(&file_name),

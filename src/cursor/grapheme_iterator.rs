@@ -203,7 +203,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_move_forwards_short() {
+    fn move_forwards_short() {
         let short_test_string = Rope::from_str("aşcd🧑‍🔬e");
         let mut it = GraphemeIterator::new(0, &short_test_string);
         assert_eq!(it.next(), Some("a".into()));
@@ -224,7 +224,7 @@ mod tests {
     }
 
     #[test]
-    fn test_move_backwards_short() {
+    fn move_backwards_short() {
         let short_test_string = Rope::from_str("aşcd🧑‍🔬ef");
         let mut it =
             GraphemeIterator::new(short_test_string.len_chars() - 1, &short_test_string).rev();
@@ -249,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn test_move_forwards_long() {
+    fn move_forwards_long() {
         let s = String::from("abcdef🧑‍🔬ghş").repeat(10000);
         let rope = Rope::from_str(&s);
         let mut it_expected = s.graphemes(true);
@@ -262,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn test_move_backwards_long() {
+    fn move_backwards_long() {
         let s = String::from("abcdef🧑‍🔬ghş").repeat(10000);
         let rope = Rope::from_str(&s);
         let mut it_expected = s.graphemes(true).rev();
@@ -275,7 +275,7 @@ mod tests {
     }
 
     #[test]
-    fn test_inverse_ends_short() {
+    fn inverse_ends_short() {
         let short_test_string = Rope::from_str("aşcd🧑‍🔬e");
         let mut it = GraphemeIterator::new(0, &short_test_string);
         assert_eq!(it.next(), Some("a".into()));
@@ -306,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    fn test_until() {
+    fn until() {
         let short_test_string = Rope::from_str("aaaaabcd");
         let mut it = GraphemeIterator::new(0, &short_test_string);
         it = it.stop_at(|s| s.contains('b'));
@@ -326,7 +326,7 @@ mod tests {
     }
 
     #[test]
-    fn test_until_ends() {
+    fn until_ends() {
         let short_test_string = Rope::from_str("aaaaabcd");
         let mut it = GraphemeIterator::new(0, &short_test_string);
         it = it.stop_at(|s| s.contains('e'));
